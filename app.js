@@ -8,7 +8,7 @@ const CONFIG = {
     PLAYER: {
         WIDTH: 40,
         HEIGHT: 60,
-        SPEED: 5,
+        SPEED: 6,
         JUMP_FORCE: -12,
         MAX_HEALTH: 100
     },
