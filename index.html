@@ -3,35 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>多人線上RPG</title>
+    <title>多人線上魔法對戰</title>
     <link rel="stylesheet" href="styles.css">
-    <!-- 引入 GUN.js -->
     <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gun/lib/webrtc.js"></script>
 </head>
 <body>
-    <div id="app">
-        <div id="game-container">
+    <div id="game-wrapper">
+        <div id="login-screen" class="screen">
+            <div class="login-box">
+                <h2>多人線上魔法對戰</h2>
+                <input type="text" id="playerName" placeholder="輸入您的名字" maxlength="12">
+                <button id="startBtn">開始遊戲</button>
+            </div>
+        </div>
+        <div id="game-screen" class="screen hidden">
             <canvas id="gameCanvas"></canvas>
             <div id="ui-overlay">
-                <div id="player-info">
-                    <span>玩家名稱: </span>
-                    <input type="text" id="playerName" placeholder="輸入您的名字">
-                    <button id="startGame">開始遊戲</button>
+                <div id="stats">
+                    <div id="health-bar">
+                        <div class="bar-label">生命值</div>
+                        <div class="bar-container">
+                            <div class="bar-fill"></div>
+                        </div>
+                    </div>
                 </div>
-                <div id="players-online"></div>
+                <div id="player-list">
+                    <h3>在線玩家</h3>
+                    <div id="players"></div>
+                </div>
             </div>
         </div>
     </div>
-    <script>
-        // 將踢除玩家函數定義為全局函數
-        window.kickPlayer = function(playerId) {
-            if (confirm('確定要踢除這個玩家嗎？')) {
-                gun.get('mmorpg').get('players').get(playerId).put(null);
-            }
-        };
-    </script>
     <script src="app.js"></script>
 </body>
 </html>

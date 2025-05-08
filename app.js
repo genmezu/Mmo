@@ -1,181 +1,63 @@
-// 初始化 GUN
-const gun = Gun({
-    peers: ['https://gun-manhattan.herokuapp.com/gun']
-});
+// 遊戲設定
+const CONFIG = {
+    WORLD: {
+        WIDTH: 2400,
+        HEIGHT: 1200,
+        GRAVITY: 0.5
+    },
+    PLAYER: {
+        WIDTH: 40,
+        HEIGHT: 60,
+        SPEED: 5,
+        JUMP_FORCE: -12,
+        MAX_HEALTH: 100
+    },
+    SPELL: {
+        TYPES: ['FIRE', 'ICE', 'LIGHTNING'],
+        COLORS: {
+            FIRE: '#ff4400',
+            ICE: '#00ffff',
+            LIGHTNING: '#ffff00'
+        },
+        DAMAGE: {
+            FIRE: 30,
+            ICE: 20,
+            LIGHTNING: 25
+        },
+        SIZE: 20,
+        SPEED: 10,
+        RANGE: 300,
+        KNOCKBACK: 15
+    }
+};
 
-// 遊戲狀態管理
+// GUN 資料庫初始化
+const gun = Gun(['https://gun-manhattan.herokuapp.com/gun']);
+const players = gun.get('mmorpg-players');
+
+// 遊戲狀態
 const game = {
     canvas: null,
     ctx: null,
+    camera: { x: 0, y: 0 },
+    keys: {},
+    mousePos: { x: 0, y: 0 },
+    localPlayer: null,
     players: new Map(),
     spells: [],
-    localPlayer: null,
-    keys: {},
-    gameLoop: null,
-    initialized: false,
-    blocks: [], // 建築物方塊
-    camera: {
-        x: 0,
-        y: 0
-    }
+    platforms: [],
+    initialized: false
 };
 
-// 遊戲常數
-const CONSTANTS = {
-    GRAVITY: 0.5,
-    JUMP_FORCE: -12,
-    MOVE_SPEED: 5,
-    PLAYER_WIDTH: 40,
-    PLAYER_HEIGHT: 60,
-    SPELL_RANGE: 300,
-    SPELL_SPEED: 10,
-    SPELL_SIZE: 20,
-    SPELL_DAMAGE: {
-        FIREBALL: 30,
-        ICE: 20,
-        LIGHTNING: 25
-    },
-    KNOCKBACK_FORCE: 25,
-    MAX_HEALTH: 100,
-    RESPAWN_TIME: 3000,
-    BLOCK_SIZE: 40,
-    DISCONNECT_TIMEOUT: 5000,
-    MAP_WIDTH: 2400,  // 增大地圖寬度
-    MAP_HEIGHT: 1200  // 增大地圖高度
-};
-
-// 初始化遊戲
-function initGame() {
-    game.canvas = document.getElementById('gameCanvas');
-    game.ctx = game.canvas.getContext('2d');
-    
-    // 設置畫布大小
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
-
-    // 監聽鍵盤輸入
-    document.addEventListener('keydown', e => game.keys[e.key.toLowerCase()] = true);
-    document.addEventListener('keyup', e => game.keys[e.key.toLowerCase()] = false);
-
-    // 監聽滑鼠事件
-    game.canvas.addEventListener('mousedown', () => game.mouseDown = true);
-    game.canvas.addEventListener('mouseup', () => game.mouseDown = false);
-    game.canvas.addEventListener('mouseleave', () => game.mouseDown = false);
-
-    // 設置開始遊戲按鈕
-    document.getElementById('startGame').addEventListener('click', startGame);
-
-    // 初始化一些建築物方塊
-    initializeBlocks();
-
-    // 在關閉頁面時清除玩家資料
-    window.addEventListener('beforeunload', () => {
-        if (game.localPlayer) {
-            gun.get('mmorpg').get('players').get(game.localPlayer.id).put(null);
-        }
-    });
-}
-
-// 調整畫布大小
-function resizeCanvas() {
-    const container = game.canvas.parentElement;
-    game.canvas.width = container.clientWidth;
-    game.canvas.height = container.clientHeight;
-}
-
-// 初始化建築物方塊
-function initializeBlocks() {
-    // 創建多個平台
-    const platforms = [
-        // 左側區域
-        { x: 100, y: CONSTANTS.MAP_HEIGHT - 100, width: 300, height: 40 },
-        { x: 50, y: CONSTANTS.MAP_HEIGHT - 250, width: 200, height: 40 },
-        { x: 300, y: CONSTANTS.MAP_HEIGHT - 400, width: 250, height: 40 },
-        
-        // 中間區域
-        { x: CONSTANTS.MAP_WIDTH/2 - 400, y: CONSTANTS.MAP_HEIGHT - 150, width: 800, height: 40 },
-        { x: CONSTANTS.MAP_WIDTH/2 - 200, y: CONSTANTS.MAP_HEIGHT - 300, width: 400, height: 40 },
-        { x: CONSTANTS.MAP_WIDTH/2 - 100, y: CONSTANTS.MAP_HEIGHT - 450, width: 200, height: 40 },
-        
-        // 右側區域
-        { x: CONSTANTS.MAP_WIDTH - 400, y: CONSTANTS.MAP_HEIGHT - 100, width: 300, height: 40 },
-        { x: CONSTANTS.MAP_WIDTH - 250, y: CONSTANTS.MAP_HEIGHT - 250, width: 200, height: 40 },
-        { x: CONSTANTS.MAP_WIDTH - 550, y: CONSTANTS.MAP_HEIGHT - 400, width: 250, height: 40 },
-        
-        // 懸空平台
-        { x: 600, y: CONSTANTS.MAP_HEIGHT - 600, width: 150, height: 40 },
-        { x: CONSTANTS.MAP_WIDTH - 750, y: CONSTANTS.MAP_HEIGHT - 600, width: 150, height: 40 },
-        { x: CONSTANTS.MAP_WIDTH/2 - 75, y: CONSTANTS.MAP_HEIGHT - 700, width: 150, height: 40 }
-    ];
-
-    game.blocks = platforms;
-}
-
-// 檢查方塊碰撞
-function checkBlockCollision(player) {
-    for (const block of game.blocks) {
-        if (player.x < block.x + block.width &&
-            player.x + CONSTANTS.PLAYER_WIDTH > block.x &&
-            player.y < block.y + block.height &&
-            player.y + CONSTANTS.PLAYER_HEIGHT > block.y) {
-
-            // 從上方碰撞
-            if (player.velocityY > 0 && 
-                player.y + CONSTANTS.PLAYER_HEIGHT - player.velocityY <= block.y) {
-                player.y = block.y - CONSTANTS.PLAYER_HEIGHT;
-                player.velocityY = 0;
-                player.onGround = true;
-                return;
-            }
-
-            // 從下方碰撞
-            if (player.velocityY < 0 && 
-                player.y - player.velocityY >= block.y + block.height) {
-                player.y = block.y + block.height;
-                player.velocityY = 0;
-                return;
-            }
-
-            // 從左側碰撞
-            if (player.velocityX > 0 && 
-                player.x + CONSTANTS.PLAYER_WIDTH - player.velocityX <= block.x) {
-                player.x = block.x - CONSTANTS.PLAYER_WIDTH;
-                player.velocityX = 0;
-                return;
-            }
-
-            // 從右側碰撞
-            if (player.velocityX < 0 && 
-                player.x - player.velocityX >= block.x + block.width) {
-                player.x = block.x + block.width;
-                player.velocityX = 0;
-                return;
-            }
-        }
-    }
-}
-
-// 發送心跳
-function sendHeartbeat() {
-    if (game.localPlayer) {
-        gun.get('mmorpg').get('players').get(game.localPlayer.id).get('lastPing').put(Date.now());
-    }
-}
-
-// 檢查斷線玩家
-function checkDisconnectedPlayers() {
-    const now = Date.now();
-    for (let [id, player] of game.players) {
-        if (id !== game.localPlayer.id) {
-            gun.get('mmorpg').get('players').get(id).get('lastPing').once((lastPing) => {
-                if (lastPing && now - lastPing > CONSTANTS.DISCONNECT_TIMEOUT) {
-                    game.players.delete(id);
-                    gun.get('mmorpg').get('players').get(id).put(null);
-                }
-            });
-        }
-    }
-}
+// 平台設定
+const PLATFORMS = [
+    { x: 100, y: CONFIG.WORLD.HEIGHT - 100, w: 300, h: 40 },
+    { x: CONFIG.WORLD.WIDTH/2 - 400, y: CONFIG.WORLD.HEIGHT - 200, w: 800, h: 40 },
+    { x: CONFIG.WORLD.WIDTH - 400, y: CONFIG.WORLD.HEIGHT - 100, w: 300, h: 40 },
+    { x: 300, y: CONFIG.WORLD.HEIGHT - 400, w: 200, h: 40 },
+    { x: CONFIG.WORLD.WIDTH/2 - 100, y: CONFIG.WORLD.HEIGHT - 600, w: 200, h: 40 },
+    { x: CONFIG.WORLD.WIDTH - 500, y: CONFIG.WORLD.HEIGHT - 400, w: 200, h: 40 }
+];
 
 // 玩家類別
 class Player {
@@ -184,182 +66,165 @@ class Player {
         this.name = name;
         this.x = x;
         this.y = y;
-        this.velocityX = 0;
-        this.velocityY = 0;
-        this.onGround = false;
-        this.health = CONSTANTS.MAX_HEALTH;
-        this.lastAttackTime = 0;
+        this.vx = 0;
+        this.vy = 0;
+        this.health = CONFIG.PLAYER.MAX_HEALTH;
         this.facingRight = true;
-        this.isAttacking = false;
+        this.onGround = false;
         this.isDead = false;
-        this.respawnTimer = null;
+        this.lastSpell = 0;
     }
 
     update() {
         if (this.isDead) return;
 
         // 重力
-        this.velocityY += CONSTANTS.GRAVITY;
-        
-        // 移動 (使用 WASD)
+        this.vy += CONFIG.WORLD.GRAVITY;
+
+        // 移動控制
         if (game.keys['a']) {
-            this.velocityX = -CONSTANTS.MOVE_SPEED;
+            this.vx = -CONFIG.PLAYER.SPEED;
             this.facingRight = false;
-        }
-        else if (game.keys['d']) {
-            this.velocityX = CONSTANTS.MOVE_SPEED;
+        } else if (game.keys['d']) {
+            this.vx = CONFIG.PLAYER.SPEED;
             this.facingRight = true;
-        }
-        else {
-            // 逐漸減緩移動速度（摩擦力）
-            this.velocityX *= 0.8;
+        } else {
+            this.vx *= 0.8;
         }
 
-        // 跳躍 (使用 w 或空白鍵)
+        // 跳躍
         if ((game.keys['w'] || game.keys[' ']) && this.onGround) {
-            this.velocityY = CONSTANTS.JUMP_FORCE;
+            this.vy = CONFIG.PLAYER.JUMP_FORCE;
             this.onGround = false;
         }
 
-        // 攻擊 (滑鼠左鍵)
-        if (game.mouseDown && Date.now() - this.lastAttackTime > 500) {
-            this.attack();
-        }
-
         // 更新位置
-        this.x += this.velocityX;
-        this.y += this.velocityY;
+        this.x += this.vx;
+        this.y += this.vy;
 
-        // 檢查與方塊的碰撞
-        checkBlockCollision(this);
+        // 碰撞檢測
+        this.checkCollisions();
 
-        // 基本碰撞檢測（地面）
-        if (this.y + CONSTANTS.PLAYER_HEIGHT > game.canvas.height) {
-            this.y = game.canvas.height - CONSTANTS.PLAYER_HEIGHT;
-            this.velocityY = 0;
+        // 邊界檢查
+        this.x = Math.max(0, Math.min(this.x, CONFIG.WORLD.WIDTH - CONFIG.PLAYER.WIDTH));
+        if (this.y > CONFIG.WORLD.HEIGHT - CONFIG.PLAYER.HEIGHT) {
+            this.y = CONFIG.WORLD.HEIGHT - CONFIG.PLAYER.HEIGHT;
+            this.vy = 0;
             this.onGround = true;
         }
-
-        // 限制在畫面內
-        this.x = Math.max(0, Math.min(this.x, game.canvas.width - CONSTANTS.PLAYER_WIDTH));
     }
 
-    attack() {
-        if (this.isDead) return;
-        
-        this.lastAttackTime = Date.now();
-        this.isAttacking = true;
+    checkCollisions() {
+        this.onGround = false;
+        for (const platform of game.platforms) {
+            if (this.x < platform.x + platform.w &&
+                this.x + CONFIG.PLAYER.WIDTH > platform.x &&
+                this.y < platform.y + platform.h &&
+                this.y + CONFIG.PLAYER.HEIGHT > platform.y) {
 
-        // 獲取滑鼠位置（相對於畫布）
-        const rect = game.canvas.getBoundingClientRect();
-        const mouseX = event.clientX - rect.left;
-        const mouseY = event.clientY - rect.top;
-
-        // 選擇隨機法術
-        const spellTypes = ['FIREBALL', 'ICE', 'LIGHTNING'];
-        const randomSpell = spellTypes[Math.floor(Math.random() * spellTypes.length)];
-
-        // 創建法術
-        const spell = new Spell(
-            randomSpell,
-            this.x + CONSTANTS.PLAYER_WIDTH / 2,
-            this.y + CONSTANTS.PLAYER_HEIGHT / 2,
-            mouseX,
-            mouseY,
-            this
-        );
-
-        // 添加到遊戲中的法術列表
-        game.spells.push(spell);
-
-        setTimeout(() => {
-            this.isAttacking = false;
-        }, 200);
-    }
-
-    handlePlayerDeath(player) {
-        player.isDead = true;
-        gun.get('mmorpg').get('players').get(player.id).get('isDead').put(true);
-        
-        // 設置重生計時器
-        setTimeout(() => {
-            if (player.id === game.localPlayer.id) {
-                this.respawn();
-            }
-        }, CONSTANTS.RESPAWN_TIME);
-    }
-
-    respawn() {
-        this.health = CONSTANTS.MAX_HEALTH;
-        this.isDead = false;
-        this.x = Math.random() * (game.canvas.width - CONSTANTS.PLAYER_WIDTH);
-        this.y = 0;
-        this.velocityX = 0;
-        this.velocityY = 0;
-
-        // 同步重生狀態
-        const playerData = {
-            health: this.health,
-            isDead: false,
-            x: this.x,
-            y: this.y
-        };
-        gun.get('mmorpg').get('players').get(this.id).put(playerData);
-    }
-
-    checkCollision(target, attackBox) {
-        return !(attackBox.x > target.x + CONSTANTS.PLAYER_WIDTH ||
-                attackBox.x + attackBox.width < target.x ||
-                attackBox.y > target.y + CONSTANTS.PLAYER_HEIGHT ||
-                attackBox.y + attackBox.height < target.y);
-    }
-
-    applyKnockback(knockback) {
-        if (this.isDead) return;
-        this.velocityX = knockback.x;
-        this.velocityY = knockback.y;
-    }
-
-    draw(ctx) {
-        if (this.isDead) {
-            // 死亡時顯示灰色
-            ctx.fillStyle = '#666666';
-        } else {
-            ctx.fillStyle = this.id === game.localPlayer.id ? '#27ae60' : '#e74c3c';
-        }
-        
-        ctx.fillRect(this.x, this.y, CONSTANTS.PLAYER_WIDTH, CONSTANTS.PLAYER_HEIGHT);
-        
-        // 只有活著的玩家才顯示血條
-        if (!this.isDead) {
-            // 繪製血條
-            const healthBarWidth = CONSTANTS.PLAYER_WIDTH;
-            const healthBarHeight = 5;
-            ctx.fillStyle = '#c0392b';
-            ctx.fillRect(this.x, this.y - 10, healthBarWidth, healthBarHeight);
-            ctx.fillStyle = '#27ae60';
-            ctx.fillRect(this.x, this.y - 10, (this.health / CONSTANTS.MAX_HEALTH) * healthBarWidth, healthBarHeight);
-
-            // 繪製攻擊範圍（debug用）
-            if (this.isAttacking) {
-                ctx.strokeStyle = 'yellow';
-                ctx.lineWidth = 2;
-                if (this.facingRight) {
-                    ctx.strokeRect(this.x + CONSTANTS.PLAYER_WIDTH, this.y, 
-                        CONSTANTS.ATTACK_RANGE, CONSTANTS.PLAYER_HEIGHT);
-                } else {
-                    ctx.strokeRect(this.x - CONSTANTS.ATTACK_RANGE, this.y, 
-                        CONSTANTS.ATTACK_RANGE, CONSTANTS.PLAYER_HEIGHT);
+                // 從上方碰撞
+                if (this.vy > 0 && this.y + CONFIG.PLAYER.HEIGHT - this.vy <= platform.y) {
+                    this.y = platform.y - CONFIG.PLAYER.HEIGHT;
+                    this.vy = 0;
+                    this.onGround = true;
+                }
+                // 從下方碰撞
+                else if (this.vy < 0 && this.y - this.vy >= platform.y + platform.h) {
+                    this.y = platform.y + platform.h;
+                    this.vy = 0;
+                }
+                // 從左側碰撞
+                else if (this.vx > 0 && this.x + CONFIG.PLAYER.WIDTH - this.vx <= platform.x) {
+                    this.x = platform.x - CONFIG.PLAYER.WIDTH;
+                    this.vx = 0;
+                }
+                // 從右側碰撞
+                else if (this.vx < 0 && this.x - this.vx >= platform.x + platform.w) {
+                    this.x = platform.x + platform.w;
+                    this.vx = 0;
                 }
             }
         }
+    }
+
+    castSpell(targetX, targetY) {
+        if (this.isDead || Date.now() - this.lastSpell < 500) return;
         
-        // 繪製玩家名稱和狀態
+        this.lastSpell = Date.now();
+        const spellType = CONFIG.SPELL.TYPES[Math.floor(Math.random() * CONFIG.SPELL.TYPES.length)];
+        
+        const spell = new Spell(
+            spellType,
+            this.x + CONFIG.PLAYER.WIDTH/2,
+            this.y + CONFIG.PLAYER.HEIGHT/2,
+            targetX,
+            targetY,
+            this
+        );
+        
+        game.spells.push(spell);
+    }
+
+    takeDamage(amount, knockbackX, knockbackY) {
+        if (this.isDead) return;
+        
+        this.health = Math.max(0, this.health - amount);
+        this.vx += knockbackX;
+        this.vy += knockbackY;
+
+        if (this.health <= 0) {
+            this.die();
+        }
+
+        // 更新血條
+        if (this === game.localPlayer) {
+            document.querySelector('.bar-fill').style.width = `${this.health}%`;
+        }
+    }
+
+    die() {
+        this.isDead = true;
+        setTimeout(() => this.respawn(), 3000);
+    }
+
+    respawn() {
+        this.health = CONFIG.PLAYER.MAX_HEALTH;
+        this.isDead = false;
+        this.x = Math.random() * (CONFIG.WORLD.WIDTH - CONFIG.PLAYER.WIDTH);
+        this.y = 0;
+        this.vx = 0;
+        this.vy = 0;
+
+        if (this === game.localPlayer) {
+            document.querySelector('.bar-fill').style.width = '100%';
+            players.get(this.id).put({
+                x: this.x,
+                y: this.y,
+                health: this.health,
+                isDead: false
+            });
+        }
+    }
+
+    draw(ctx) {
+        ctx.fillStyle = this.isDead ? '#666666' : (this === game.localPlayer ? '#27ae60' : '#e74c3c');
+        ctx.fillRect(this.x, this.y, CONFIG.PLAYER.WIDTH, CONFIG.PLAYER.HEIGHT);
+
+        // 名字
         ctx.fillStyle = 'white';
         ctx.font = '14px Arial';
         ctx.textAlign = 'center';
-        const displayName = this.isDead ? `${this.name} (死亡中...)` : this.name;
-        ctx.fillText(displayName, this.x + CONSTANTS.PLAYER_WIDTH/2, this.y - 15);
+        ctx.fillText(this.name, this.x + CONFIG.PLAYER.WIDTH/2, this.y - 10);
+
+        // 血條
+        if (!this.isDead) {
+            const barWidth = CONFIG.PLAYER.WIDTH;
+            const barHeight = 4;
+            ctx.fillStyle = '#c0392b';
+            ctx.fillRect(this.x, this.y - 8, barWidth, barHeight);
+            ctx.fillStyle = '#27ae60';
+            ctx.fillRect(this.x, this.y - 8, (this.health / CONFIG.PLAYER.MAX_HEALTH) * barWidth, barHeight);
+        }
     }
 }
 
@@ -369,104 +234,203 @@ class Spell {
         this.type = type;
         this.x = x;
         this.y = y;
-        const dx = targetX - x;
-        const dy = targetY - y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        this.vx = (dx / dist) * CONSTANTS.SPELL_SPEED;
-        this.vy = (dy / dist) * CONSTANTS.SPELL_SPEED;
         this.caster = caster;
+
+        const angle = Math.atan2(targetY - y, targetX - x);
+        this.vx = Math.cos(angle) * CONFIG.SPELL.SPEED;
+        this.vy = Math.sin(angle) * CONFIG.SPELL.SPEED;
+
         this.traveled = 0;
-        this.maxRange = CONSTANTS.SPELL_RANGE;
     }
 
     update() {
         this.x += this.vx;
         this.y += this.vy;
-        this.traveled += Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-        return this.traveled < this.maxRange;
+        
+        const distance = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+        this.traveled += distance;
+
+        // 檢查碰撞
+        for (const [_, player] of game.players) {
+            if (player !== this.caster && !player.isDead && this.checkHit(player)) {
+                this.hit(player);
+                return false;
+            }
+        }
+
+        // 檢查平台碰撞
+        for (const platform of game.platforms) {
+            if (this.x >= platform.x && this.x <= platform.x + platform.w &&
+                this.y >= platform.y && this.y <= platform.y + platform.h) {
+                return false;
+            }
+        }
+
+        return this.traveled < CONFIG.SPELL.RANGE;
+    }
+
+    checkHit(player) {
+        const dx = this.x - (player.x + CONFIG.PLAYER.WIDTH/2);
+        const dy = this.y - (player.y + CONFIG.PLAYER.HEIGHT/2);
+        return Math.sqrt(dx * dx + dy * dy) < CONFIG.SPELL.SIZE + Math.max(CONFIG.PLAYER.WIDTH, CONFIG.PLAYER.HEIGHT)/2;
+    }
+
+    hit(player) {
+        const damage = CONFIG.SPELL.DAMAGE[this.type];
+        const knockback = CONFIG.SPELL.KNOCKBACK;
+        const knockbackX = this.vx / CONFIG.SPELL.SPEED * knockback;
+        const knockbackY = this.vy / CONFIG.SPELL.SPEED * knockback;
+
+        player.takeDamage(damage, knockbackX, knockbackY);
+
+        if (player !== game.localPlayer) {
+            players.get(player.id).put({
+                health: player.health,
+                isDead: player.isDead,
+                x: player.x,
+                y: player.y
+            });
+        }
     }
 
     draw(ctx) {
         ctx.beginPath();
-        switch(this.type) {
-            case 'FIREBALL':
-                ctx.fillStyle = '#ff4400';
-                break;
-            case 'ICE':
-                ctx.fillStyle = '#00ffff';
-                break;
-            case 'LIGHTNING':
-                ctx.fillStyle = '#ffff00';
-                break;
-        }
-        ctx.arc(this.x, this.y, CONSTANTS.SPELL_SIZE / 2, 0, Math.PI * 2);
+        ctx.fillStyle = CONFIG.SPELL.COLORS[this.type];
+        ctx.arc(this.x, this.y, CONFIG.SPELL.SIZE/2, 0, Math.PI * 2);
         ctx.fill();
-    }
-
-    checkHit(player) {
-        if (player.id === this.caster.id || player.isDead) return false;
-        
-        const dx = this.x - (player.x + CONSTANTS.PLAYER_WIDTH / 2);
-        const dy = this.y - (player.y + CONSTANTS.PLAYER_HEIGHT / 2);
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        return distance < CONSTANTS.SPELL_SIZE + Math.max(CONSTANTS.PLAYER_WIDTH, CONSTANTS.PLAYER_HEIGHT) / 2;
     }
 }
 
+// 遊戲初始化
+function initGame() {
+    // 設置畫布
+    game.canvas = document.getElementById('gameCanvas');
+    game.ctx = game.canvas.getContext('2d');
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    // 設置平台
+    game.platforms = PLATFORMS;
+
+    // 事件監聽
+    document.addEventListener('keydown', e => game.keys[e.key.toLowerCase()] = true);
+    document.addEventListener('keyup', e => game.keys[e.key.toLowerCase()] = false);
+    game.canvas.addEventListener('mousemove', handleMouseMove);
+    game.canvas.addEventListener('mousedown', handleMouseClick);
+
+    // 開始按鈕
+    document.getElementById('startBtn').addEventListener('click', startGame);
+}
+
+// 處理滑鼠移動
+function handleMouseMove(e) {
+    const rect = game.canvas.getBoundingClientRect();
+    game.mousePos.x = e.clientX - rect.left + game.camera.x;
+    game.mousePos.y = e.clientY - rect.top + game.camera.y;
+}
+
+// 處理滑鼠點擊
+function handleMouseClick() {
+    if (game.localPlayer && !game.localPlayer.isDead) {
+        game.localPlayer.castSpell(game.mousePos.x, game.mousePos.y);
+    }
+}
+
+// 調整畫布大小
+function resizeCanvas() {
+    game.canvas.width = window.innerWidth;
+    game.canvas.height = window.innerHeight;
+}
+
+// 更新相機位置
+function updateCamera() {
+    if (!game.localPlayer) return;
+
+    const targetX = game.localPlayer.x - game.canvas.width/2 + CONFIG.PLAYER.WIDTH/2;
+    const targetY = game.localPlayer.y - game.canvas.height/2 + CONFIG.PLAYER.HEIGHT/2;
+
+    game.camera.x = Math.max(0, Math.min(targetX, CONFIG.WORLD.WIDTH - game.canvas.width));
+    game.camera.y = Math.max(0, Math.min(targetY, CONFIG.WORLD.HEIGHT - game.canvas.height));
+}
+
+// 更新玩家列表
+function updatePlayerList() {
+    const playerList = document.getElementById('players');
+    playerList.innerHTML = Array.from(game.players.values())
+        .map(p => `
+            <div class="player-item">
+                <span>${p.name}${p.isDead ? ' (死亡中)' : ''}</span>
+                ${p !== game.localPlayer ? 
+                    `<button onclick="kickPlayer('${p.id}')">踢除</button>` : 
+                    ''}
+            </div>
+        `).join('');
+}
+
+// 踢除玩家
+window.kickPlayer = function(playerId) {
+    if (confirm('確定要踢除這個玩家？')) {
+        players.get(playerId).put(null);
+        game.players.delete(playerId);
+        updatePlayerList();
+    }
+};
+
 // 開始遊戲
 function startGame() {
-    const playerName = document.getElementById('playerName').value || '玩家' + Math.floor(Math.random() * 1000);
-    const playerId = Math.random().toString(36).substr(2, 9);
+    const playerName = document.getElementById('playerName').value.trim() || `玩家${Math.floor(Math.random() * 1000)}`;
+    const playerId = Math.random().toString(36).substring(2);
 
-    game.localPlayer = new Player(playerId, playerName, 
-        game.canvas.width / 2, 
-        game.canvas.height - CONSTANTS.PLAYER_HEIGHT
+    // 創建本地玩家
+    game.localPlayer = new Player(
+        playerId,
+        playerName,
+        CONFIG.WORLD.WIDTH/2,
+        0
     );
     game.players.set(playerId, game.localPlayer);
 
-    // 同步玩家資料到 GUN
-    const players = gun.get('mmorpg').get('players');
+    // 同步到 GUN
     players.get(playerId).put({
         id: playerId,
         name: playerName,
         x: game.localPlayer.x,
         y: game.localPlayer.y,
-        active: true  // 新增活躍狀態標記
+        health: game.localPlayer.health,
+        isDead: false
     });
 
-    // 監聽玩家資料變化
+    // 監聽其他玩家
     players.map().on((data, id) => {
-        if (id === playerId) return;
-        
-        // 檢查玩家是否被踢除或斷線
-        if (!data || data === null) {
+        if (!data) {
             game.players.delete(id);
+            updatePlayerList();
             return;
         }
 
-        // 更新或新增玩家
-        if (!game.players.has(id) && data.active) {
-            game.players.set(id, new Player(id, data.name, data.x, data.y));
-        } else if (game.players.has(id)) {
-            const player = game.players.get(id);
-            if (data.x !== undefined) player.x = data.x;
-            if (data.y !== undefined) player.y = data.y;
-            if (data.health !== undefined) player.health = data.health;
-            if (data.isDead !== undefined) player.isDead = data.isDead;
-            if (data.knockback) {
-                player.applyKnockback(data.knockback);
-                gun.get('mmorpg').get('players').get(id).get('knockback').put(null);
+        if (id !== playerId) {
+            if (!game.players.has(id)) {
+                const newPlayer = new Player(id, data.name, data.x, data.y);
+                game.players.set(id, newPlayer);
             }
+            const player = game.players.get(id);
+            player.x = data.x;
+            player.y = data.y;
+            player.health = data.health;
+            player.isDead = data.isDead;
         }
+        updatePlayerList();
     });
 
+    // 切換畫面
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('game-screen').classList.remove('hidden');
+
+    // 開始遊戲循環
     if (!game.initialized) {
         game.initialized = true;
         gameLoop();
     }
-
-    document.getElementById('startGame').style.display = 'none';
 }
 
 // 遊戲主循環
@@ -474,48 +438,38 @@ function gameLoop() {
     // 清空畫面
     game.ctx.clearRect(0, 0, game.canvas.width, game.canvas.height);
 
-    // 更新相機位置
+    // 更新相機
     updateCamera();
 
     // 保存畫布狀態
     game.ctx.save();
     
-    // 應用相機偏移
+    // 應用相機位移
     game.ctx.translate(-game.camera.x, -game.camera.y);
 
-    // 繪製建築物方塊
+    // 繪製平台
     game.ctx.fillStyle = '#8b4513';
-    for (const block of game.blocks) {
-        game.ctx.fillRect(block.x, block.y, block.width, block.height);
+    for (const platform of game.platforms) {
+        game.ctx.fillRect(platform.x, platform.y, platform.w, platform.h);
     }
 
     // 更新和繪製法術
     game.spells = game.spells.filter(spell => {
-        if (spell.update()) {
-            spell.draw(game.ctx);
-            // 檢查法術碰撞
-            for (let player of game.players.values()) {
-                if (spell.checkHit(player)) {
-                    handleSpellHit(spell, player);
-                    return false;
-                }
-            }
-            return true;
-        }
-        return false;
+        const active = spell.update();
+        if (active) spell.draw(game.ctx);
+        return active;
     });
 
-    // 更新和繪製所有玩家
-    for (let player of game.players.values()) {
-        if (player.id === game.localPlayer.id) {
+    // 更新和繪製玩家
+    for (const player of game.players.values()) {
+        if (player === game.localPlayer) {
             player.update();
-            // 同步位置到 GUN
-            const playerData = {
+            players.get(player.id).put({
                 x: player.x,
                 y: player.y,
-                lastPing: Date.now()
-            };
-            gun.get('mmorpg').get('players').get(player.id).put(playerData);
+                health: player.health,
+                isDead: player.isDead
+            });
         }
         player.draw(game.ctx);
     }
@@ -523,68 +477,8 @@ function gameLoop() {
     // 恢復畫布狀態
     game.ctx.restore();
 
-    // 更新在線玩家列表
-    updatePlayersList();
-
     requestAnimationFrame(gameLoop);
 }
 
-// 處理法術命中
-function handleSpellHit(spell, target) {
-    const damage = CONSTANTS.SPELL_DAMAGE[spell.type];
-    const newHealth = target.health - damage;
-    
-    // 計算擊退方向
-    const knockbackDirection = {
-        x: spell.vx * CONSTANTS.KNOCKBACK_FORCE / CONSTANTS.SPELL_SPEED,
-        y: spell.vy * CONSTANTS.KNOCKBACK_FORCE / CONSTANTS.SPELL_SPEED
-    };
-
-    // 同步傷害和擊退
-    gun.get('mmorpg').get('players').get(target.id).get('health').put(newHealth);
-    gun.get('mmorpg').get('players').get(target.id).get('knockback').put(knockbackDirection);
-
-    if (newHealth <= 0) {
-        spell.caster.handlePlayerDeath(target);
-    }
-}
-
-// 更新在線玩家列表
-function updatePlayersList() {
-    const list = document.getElementById('players-online');
-    list.innerHTML = '<h3>在線玩家:</h3>' + 
-        Array.from(game.players.values())
-            .map(p => `
-                <div class="player-item">
-                    <span>${p.name} ${p.isDead ? '(死亡中...)' : ''}</span>
-                    ${p.id !== game.localPlayer.id ? 
-                        `<button onclick="kickPlayer('${p.id}')" class="kick-button">踢除</button>` : 
-                        ''}
-                </div>
-            `)
-            .join('');
-}
-
-// 踢除玩家
-function kickPlayer(playerId) {
-    if (confirm('確定要踢除這個玩家嗎？')) {
-        gun.get('mmorpg').get('players').get(playerId).put(null);
-        game.players.delete(playerId);
-    }
-}
-
-// 更新相機位置
-function updateCamera() {
-    if (!game.localPlayer) return;
-    
-    // 相機跟隨本地玩家，保持玩家在畫面中央
-    game.camera.x = game.localPlayer.x - game.canvas.width / 2 + CONSTANTS.PLAYER_WIDTH / 2;
-    game.camera.y = game.localPlayer.y - game.canvas.height / 2 + CONSTANTS.PLAYER_HEIGHT / 2;
-    
-    // 限制相機不要超出地圖範圍
-    game.camera.x = Math.max(0, Math.min(game.camera.x, CONSTANTS.MAP_WIDTH - game.canvas.width));
-    game.camera.y = Math.max(0, Math.min(game.camera.y, CONSTANTS.MAP_HEIGHT - game.canvas.height));
-}
-
-// 初始化遊戲
+// 啟動遊戲
 initGame();
