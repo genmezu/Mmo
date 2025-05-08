@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多人線上RPG</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- 引入 GUN.js -->
+    <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gun/lib/webrtc.js"></script>
+</head>
+<body>
+    <div id="app">
+        <div id="game-container">
+            <canvas id="gameCanvas"></canvas>
+            <div id="ui-overlay">
+                <div id="player-info">
+                    <span>玩家名稱: </span>
+                    <input type="text" id="playerName" placeholder="輸入您的名字">
+                    <button id="startGame">開始遊戲</button>
+                </div>
+                <div id="players-online"></div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // 將踢除玩家函數定義為全局函數
+        window.kickPlayer = function(playerId) {
+            if (confirm('確定要踢除這個玩家嗎？')) {
+                gun.get('mmorpg').get('players').get(playerId).put(null);
+            }
+        };
+    </script>
+    <script src="app.js"></script>
+</body>
+</html>
